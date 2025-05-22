@@ -8,41 +8,63 @@ const PORT = process.env.PORT || 3000;
 const app = express();
 app.use(bodyParser.json());
 
+// Carrega usuários do arquivo
 function carregarUsuarios() {
   if (!fs.existsSync(DB_PATH)) fs.writeFileSync(DB_PATH, JSON.stringify({}, null, 2));
   const conteudo = fs.readFileSync(DB_PATH, 'utf8').trim();
   return conteudo ? JSON.parse(conteudo) : {};
 }
 
+// Salva usuários no arquivo
 function salvarUsuarios(usuarios) {
   fs.writeFileSync(DB_PATH, JSON.stringify(usuarios, null, 2));
 }
 
+// Rota simples pra teste
+app.get('/', (req, res) => {
+  res.send('Servidor webhook NutriIA está rodando!');
+});
+
+// Webhook
 app.post('/webhook', (req, res) => {
+  console.log('Webhook recebido:', JSON.stringify(req.body, null, 2));
+
   try {
     const data = req.body;
-    console.log('Recebido webhook:', data);
 
-    if (data.status === 'approved' && data.telefone) {
+    // Verifica se o status é "Aprovado"
+    if (data.status === 'Aprovado') {
+      // Pega o telefone no formato internacional (com DDI)
+      const telefone = data.customer?.phone;
+
+      if (!telefone) {
+        console.log('Telefone não encontrado no webhook.');
+        return res.status(400).json({ message: 'Telefone não encontrado no payload.' });
+      }
+
+      const numeroFormatado = `${telefone}@c.us`;
       const usuarios = carregarUsuarios();
-      const numero = `${data.telefone}@c.us`;
 
-      if (usuarios[numero]) {
-        usuarios[numero].liberado = true;
+      if (usuarios[numeroFormatado]) {
+        usuarios[numeroFormatado].liberado = true;
         salvarUsuarios(usuarios);
-        console.log(`Usuário ${numero} liberado com sucesso.`);
-        return res.status(200).json({ message: 'Usuário liberado' });
+        console.log(`✅ Usuário ${numeroFormatado} liberado com sucesso.`);
+        return res.status(200).json({ message: 'Usuário liberado com sucesso' });
       } else {
-        console.log(`Usuário ${numero} não encontrado.`);
-        return res.status(404).json({ message: 'Usuário não encontrado' });
+        console.log(`❌ Usuário ${numeroFormatado} não encontrado no banco.`);
+        return res.status(404).json({ message: 'Usuário não encontrado no banco de dados' });
       }
     } else {
-      return res.status(400).json({ message: 'Dados incompletos ou pagamento não aprovado' });
+      console.log('Pagamento não aprovado ou status diferente.');
+      return res.status(200).json({ message: 'Status diferente de Aprovado. Ignorado.' });
     }
-  } catch (err) {
-    console.error('Erro:', err);
-    return res.status(500).json({ message: 'Erro interno' });
+  } catch (error) {
+    console.error('🚨 Erro no webhook:', error);
+    return res.status(500).json({ message: 'Erro interno no servidor' });
   }
 });
 
-app.listen(PORT, () => console.log(`Webhook rodando na porta ${PORT}`));
+// Inicia o servidor
+app.listen(PORT, () => {
+  console.log(`🚀 Webhook rodando na porta ${PORT}`);
+});
